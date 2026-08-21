@@ -1,0 +1,27 @@
+{
+  "name": "pi-web",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Pi Web Service — single-user web frontend + gateway for Pi Agent (RPC mode)",
+  "type": "module",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c magenta,cyan \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "cross-env PI_WEB_PUBLIC_PORT=5188 npm run dev -w server",
+    "dev:web": "npm run dev -w web",
+    "build": "npm run build -w server && npm run build -w web",
+    "start": "cross-env NODE_ENV=production node server/dist/index.js",
+    "test": "npm run test -w server",
+    "smoke": "cross-env SMOKE=1 npm run test -w server -- integration"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3"
+  },
+  "engines": {
+    "node": ">=22.5"
+  }
+}

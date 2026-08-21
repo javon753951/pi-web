@@ -1,0 +1,24 @@
+services:
+  pi-web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: pi-web
+    ports:
+      - "${PI_WEB_PORT:-8787}:8787"
+    environment:
+      - PI_WEB_TOKEN=${PI_WEB_TOKEN:-}
+      - PI_WEB_HOST=0.0.0.0
+      # 容器内访问宿主代理（如需 npm registry 代理；宿主机 Clash 等）
+      # - HTTP_PROXY=http://host.docker.internal:7897
+      # - HTTPS_PROXY=http://host.docker.internal:7897
+      # - NO_PROXY=localhost,127.0.0.1
+    volumes:
+      # 元数据/会话/工作区/MCP 配置（宿主机可直接查看 workspaces/）
+      - ./data:/app/data
+      # pi 用户级配置（auth.json/settings.json/已装扩展）—— 独立卷持久化
+      - pi-agent:/root/.pi/agent
+    restart: unless-stopped
+
+volumes:
+  pi-agent:
