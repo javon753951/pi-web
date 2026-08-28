@@ -38,6 +38,14 @@ cd docker && docker compose up -d --build
 
 镜像内置办公依赖（agent 开箱即用，不用现场装包）：Python venv（`/opt/py`，pandas/openpyxl/python-docx/python-pptx/pypdf/pdfplumber/matplotlib/bs4/lxml 等，清华 pip 源）、pandoc、poppler、zip/jq、**中文字体（fonts-noto-cjk，画图/转 PDF 不出豆腐块）**；`WITH_OFFICE=1` 追加 LibreOffice headless（`soffice --headless --convert-to pdf`）。venv 不受 Debian PEP 668 限制，agent 运行中仍可 `pip install` 临时包。
 
+## CI/CD
+
+[![CI](https://github.com/javon753951/pi-web/actions/workflows/ci.yml/badge.svg)](https://github.com/javon753951/pi-web/actions/workflows/ci.yml) [![Release](https://github.com/javon753951/pi-web/actions/workflows/release.yml/badge.svg)](https://github.com/javon753951/pi-web/actions/workflows/release.yml)
+
+- **CI 门禁**（`.github/workflows/ci.yml`）：push 到 main / 开 PR 时自动跑双端测试（server + web）与构建，绿了才允许合并
+- **发布部署**（`.github/workflows/release.yml`）：打 `v*` tag 自动构建镜像推 GHCR（`ghcr.io/javon753951/pi-web`），并 SSH 到服务器拉新镜像滚动更新 + 健康检查；回滚 = 指回旧 tag
+- 逐行讲解、Secrets 配置、服务器准备与排错手册见 [docs/cicd-tutorial.md](docs/cicd-tutorial.md)
+
 ## 鉴权
 
 - 首次启动自动生成 token 存 `data/.token`，也可用环境变量 `PI_WEB_TOKEN` 覆盖。
