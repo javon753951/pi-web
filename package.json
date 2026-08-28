@@ -14,7 +14,7 @@
     "dev:web": "npm run dev -w web",
     "build": "npm run build -w server && npm run build -w web",
     "start": "cross-env NODE_ENV=production node server/dist/index.js",
-    "test": "npm run test -w server",
+    "test": "npm test --workspaces --if-present",
     "smoke": "cross-env SMOKE=1 npm run test -w server -- integration"
   },
   "devDependencies": {

@@ -1,0 +1,89 @@
+# ============================================================
+# CI 质量门禁：push 到 main 或开 PR 时自动跑「测试 + 构建」
+#
+# GitHub Actions 核心模型（对照本文件理解）：
+#   workflow = 本文件；触发器(on) → 多个 job → 每个 job 里多个 step
+#   job 跑在 GitHub 提供的云端虚拟机(runner)上，这里是 ubuntu-latest
+#   step 要么是 shell 命令(run)，要么是别人写好的可复用动作(uses)
+# ============================================================
+name: CI
+
+on:
+  push:
+    branches: [main] # 只有 push 到 main 才跑，其他分支的 push 不浪费配额
+  pull_request: # 任何 PR（默认目标是 main）都会触发，用于合并前检查
+
+# 并发控制：同一个 ref（分支/PR）上有新 push 时，取消还在跑的旧运行。
+# 省运行时长配额，也避免排队越积越多。release.yml 里我们会反过来设 false。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# 最小权限原则：GITHUB_TOKEN 默认权限很大，显式收窄到只读代码。
+# 需要推镜像等写权限的放 release.yml 里单独开。
+permissions:
+  contents: read
+
+jobs:
+  # ---------- 测试拆成两个并行 job：互相独立，谁挂了一目了然 ----------
+  test-server:
+    name: 测试 server（Fastify 网关）
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      # setup-node 顺带做两件事：装好指定版本 Node + 按 package-lock.json
+      # 哈希缓存 ~/.npm，下次 npm ci 快很多（cache: npm 就是开缓存的开关）
+      - name: 安装 Node 22（匹配 package.json engines >=22.5）
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # npm ci 严格按 lockfile 安装（比 npm install 快且可复现），
+      # lockfile 与 package.json 不同步时会直接报错——这正是我们要的门禁
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 跑 server 单测
+        run: npm test -w server
+
+  test-web:
+    name: 测试 web（React 前端）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: 跑 web 单测
+        run: npm test -w web
+
+  # ---------- 汇总构建：needs 让它等两个测试 job 都绿了才跑 ----------
+  build:
+    name: 构建（server tsc + web vite）
+    needs: [test-server, test-web]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: 双端构建
+        run: npm run build
+
+      # 构建产物上传为 workflow artifact（可在运行页面下载），方便
+      # 「本地跑不起来但 CI 能/反过来」时对比排查。7 天自动清理。
+      - name: 归档构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            server/dist
+            web/dist
+          retention-days: 7
