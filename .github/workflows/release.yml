@@ -1,0 +1,173 @@
+# ============================================================
+# Release 流水线：打 v* tag 才触发 —— CI 保质量，tag 管发布
+#
+#   tag v0.1.0 push ──► image job：双端构建 → Docker 镜像 → 推 GHCR
+#                    └─► deploy job（等 image 成功）：SSH 到服务器拉新镜像重启
+#
+# 为什么要分开两个 workflow 文件？
+#   ci.yml 面向「每次改动」（push/PR，高频、只读），release.yml 面向
+#   「发布」（tag，低频、有写权限、会动生产服务器）。触发语义、权限、
+#   风险等级都不同，分开最清晰。
+# ============================================================
+name: Release
+
+on:
+  push:
+    tags: ['v*'] # 只匹配 v 开头的 tag，如 v0.1.0；打错前缀不会触发发布
+
+# 发布要么完整走完，要么明确失败重来，不搞「取消一半」。
+# 注意 group 含 github.ref：同时推两个不同 tag 互不干扰。
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# 这个 workflow 需要的写权限：
+#   contents: read   —— 拉代码
+#   packages: write  —— 推镜像到 GHCR（容器镜像属于 GitHub Packages）
+permissions:
+  contents: read
+  packages: write
+
+env:
+  # github.repository = "javon753951/pi-web"，拼出完整镜像地址。
+  # GHCR 要求全小写，本仓库路径天然满足。
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  # ==========================================================
+  # Job 1：构建并推送镜像到 GHCR
+  # ==========================================================
+  image:
+    name: 构建并推送镜像
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # 关键顺序：先构建再打镜像。现有 docker/Dockerfile 的设计是
+      # COPY 预构建好的 server/dist 与 web/dist（见 Dockerfile L4），
+      # 而 dist 被 .gitignore 忽略、不在 git 里，所以必须在 runner 上
+      # 先跑 npm run build，让 build context 里出现新鲜的 dist。
+      - name: 构建前端与后端产物
+        run: npm run build
+
+      # buildx = Docker 的增强构建器，支持 GHA 缓存、多平台等能力
+      - name: 初始化 Docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 用 workflow 自带的 GITHUB_TOKEN 登录 GHCR，不需要额外建 PAT
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 镜像标签策略（metadata-action 按 tag v1.2.3 自动生成）：
+      #   1.2.3 / 1.2 / 1  ← semver 三段式，方便服务器按大版本锁定
+      #   v1.2.3           ← 原样 tag，与 git tag 一一对应（部署脚本用它）
+      #   latest           ← 常规版本追加；预发布（如 v1.2.3-beta.1）不更新
+      - name: 生成镜像标签
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ !contains(github.ref, '-') }}
+
+      # context 用 runner 上的本地目录（上一步刚构建好 dist 就在里面）。
+      # cache-from/to=gha 把 Docker 层缓存存进 GitHub 缓存：镜像的
+      # apt/pip/npm 全局安装那几层（Dockerfile L1-L4 之前）几乎不变，
+      # 缓存命中后每次发布只需重建「COPY 产物」之后的层。
+      - name: 构建并推送镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ==========================================================
+  # Job 2：SSH 到服务器，拉新镜像滚动更新
+  #
+  # 部署流派选择「服务器拉镜像」：编排文件进 git，服务器不存源码，
+  # 部署 = pull + up -d，幂等、可重复、回滚 = 指回旧 tag。
+  # ==========================================================
+  deploy:
+    name: 部署到 Aliyun 服务器
+    needs: image # 镜像没推上去绝不部署
+    runs-on: ubuntu-latest
+    # environment 把这次部署挂到名为 production 的「环境」上；
+    # 之后可在仓库 Settings→Environments 给它加审批人/限制分支等门禁
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 确保远端目录存在（首次部署幂等）
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          script: mkdir -p ~/pi-web/data
+
+      # 每次部署都重传编排文件：compose.prod.yml 在 git 里更新后
+      # 下一次发布自动生效，服务器永远与仓库保持一致
+      - name: 上传 compose 编排文件
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          source: docker/docker-compose.prod.yml
+          target: ~/pi-web/
+          strip_components: 1 # 去掉路径里的 docker/ 前缀，落到 ~/pi-web/ 根下
+
+      - name: 拉取新镜像并滚动更新
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          command_timeout: 20m # 国内服务器拉 GHCR 镜像可能较慢，放宽超时
+          script: |
+            set -e
+            cd ~/pi-web
+
+            # GitHub 在脚本发往服务器前先把表达式替换成字面量，
+            # 所以这行到服务器上时已经是：REF="v0.1.0"
+            REF="${{ github.ref_name }}"
+
+            # 镜像 tag 用 git tag 原样值（v0.1.0，metadata-action 的
+            # type=ref,event=tag 生成），不与 latest 混用——回滚才有的指
+            export PI_WEB_IMAGE_TAG="$REF"
+
+            echo "==> 部署版本: $REF"
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d
+
+            # 健康检查：最多等 60 秒，GET / 返回 200 才算部署成功
+            echo "==> 等待服务就绪..."
+            for i in $(seq 1 30); do
+              if curl -fsS http://127.0.0.1:8787/ > /dev/null 2>&1; then
+                echo "✅ 部署成功：pi-web $REF 已就绪"
+                docker compose -f docker-compose.prod.yml ps
+                exit 0
+              fi
+              sleep 2
+            done
+
+            echo "❌ 健康检查超时，最近日志："
+            docker compose -f docker-compose.prod.yml logs --tail 50
+            exit 1

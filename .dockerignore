@@ -1,0 +1,41 @@
+# ============================================================
+# .dockerignore：控制发送给 docker build 的 context 范围
+#
+# 没有它，整个项目目录（含几百 MB 的 node_modules、.git、data）
+# 都会被打包传给构建器——又慢，又有把本地数据带进镜像的风险。
+# 注意「白名单思维」：Dockerfile COPY 什么就保留什么，
+# 其余一律排除。当前 Dockerfile 只 COPY：
+#   package.json / package-lock.json / server|web/package.json
+#   server/dist / web/dist / extensions
+# ============================================================
+
+# 版本控制与 CI 配置（镜像不需要 git 历史）
+.git
+.github
+.claude
+.gitignore
+.vscode
+
+# 依赖目录：容器内由 npm ci 现装，绝不能把宿主机 node_modules 带进去
+node_modules
+**/node_modules
+
+# 运行时数据：token、会话、数据库只属于挂载卷，进镜像就是安全事故
+data
+
+# 本地文档与测试（镜像只跑 dist 产物）
+docs
+server/test
+web/test
+*.md
+*.html
+
+# 本地构建缓存
+*.tsbuildinfo
+*.log
+.DS_Store
+
+# 一次性调研文件
+pypi_agentscope.json
+research_*.json
+research_*.md
