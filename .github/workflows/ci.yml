@@ -31,12 +31,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 拉取代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # setup-node 顺带做两件事：装好指定版本 Node + 按 package-lock.json
       # 哈希缓存 ~/.npm，下次 npm ci 快很多（cache: npm 就是开缓存的开关）
       - name: 安装 Node 22（匹配 package.json engines >=22.5）
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -53,8 +53,8 @@ jobs:
     name: 测试 web（React 前端）
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -68,8 +68,8 @@ jobs:
     needs: [test-server, test-web]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -80,7 +80,7 @@ jobs:
       # 构建产物上传为 workflow artifact（可在运行页面下载），方便
       # 「本地跑不起来但 CI 能/反过来」时对比排查。7 天自动清理。
       - name: 归档构建产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: |

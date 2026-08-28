@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, isAbsolute } from "node:path";
 import {
 	listDir,
 	previewFile,
@@ -30,7 +30,15 @@ describe("resolveInWorkspace — path traversal", () => {
 		expect(() => resolveInWorkspace(root, "src/../../../etc/passwd")).toThrow(WorkspaceError);
 	});
 	it("rejects absolute paths outside root", () => {
-		expect(() => resolveInWorkspace(root, "C:/Windows/system32")).toThrow(WorkspaceError);
+		// 平台相关断言："C:/Windows/system32" 只在 Windows 上是绝对路径；
+	// 在 Linux 上它只是一个以 "C:" 开头的普通相对目录名，守卫不该误伤。
+	// 所以按本平台的 isAbsolute 分支期朌：绝对 → 拒绝，相对 → 放行。
+		const winPath = "C:/Windows/system32";
+		if (isAbsolute(winPath)) {
+			expect(() => resolveInWorkspace(root, winPath)).toThrow(WorkspaceError);
+		} else {
+			expect(() => resolveInWorkspace(root, winPath)).not.toThrow();
+		}
 		expect(() => resolveInWorkspace(root, "/etc/passwd")).toThrow(WorkspaceError);
 	});
 	it("accepts paths inside root", () => {

@@ -41,8 +41,8 @@ jobs:
     name: 构建并推送镜像
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -112,10 +112,10 @@ jobs:
     # 之后可在仓库 Settings→Environments 给它加审批人/限制分支等门禁
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: 确保远端目录存在（首次部署幂等）
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
@@ -125,7 +125,7 @@ jobs:
       # 每次部署都重传编排文件：compose.prod.yml 在 git 里更新后
       # 下一次发布自动生效，服务器永远与仓库保持一致
       - name: 上传 compose 编排文件
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
@@ -135,7 +135,7 @@ jobs:
           strip_components: 1 # 去掉路径里的 docker/ 前缀，落到 ~/pi-web/ 根下
 
       - name: 拉取新镜像并滚动更新
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}

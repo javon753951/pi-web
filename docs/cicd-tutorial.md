@@ -200,6 +200,7 @@ PI_WEB_IMAGE_TAG=v0.1.0 docker compose -f docker-compose.prod.yml up -d   # 指�
 
 | 症状 | 原因与解法 |
 |---|---|
+| 本地全绿、CI 一推就红 | 八成是平台相关测试：如 Windows 盘符路径 `C:/...` 在 Linux 上只是普通相对路径。断言按 `isAbsolute()` / `process.platform` 分支；本仓库 `workspace.test.ts` 的「rejects absolute paths」就是现成修复案例 |
 | CI 里 `npm ci` 报 lockfile 不同步 | 本地改了 package.json 没 `npm install` 更新 lockfile 就提交了；本地重新 install 后把 lockfile 一起提交 |
 | 某个 job 单独红 | Checks 页点开该 job 看日志；双 job 并行的好处就是一眼知道是前端还是后端挂了 |
 | 镜像推送 403 | release.yml 的 `permissions` 少了 `packages: write`；或仓库在组织下受包策略限制 |
